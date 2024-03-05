@@ -1,21 +1,17 @@
 use eyre::OptionExt;
 use fast_image_resize as fr;
-use image::{codecs::png::PngEncoder, ColorType, DynamicImage, ImageEncoder};
+use fr::Image;
+use image::{
+    codecs::{ico::IcoEncoder, png::PngEncoder},
+    ColorType, ImageEncoder,
+};
 
 use std::{fs, io::BufWriter, num::NonZeroU32, path::Path};
 
-pub fn resize(img: DynamicImage, dim: u32) -> eyre::Result<()> {
-    let width = NonZeroU32::new(img.width()).ok_or_eyre("Non Zero Width")?;
-    let height = NonZeroU32::new(img.height()).ok_or_eyre("Non Zero Height")?;
+use crate::Extension;
 
-    let img_bffr = img.into_rgba8();
-
-    let mut src_img =
-        fr::Image::from_vec_u8(width, height, img_bffr.into_raw(), fr::PixelType::U8x4)?;
-
+pub fn resize(src_img: &Image, dim: u32, out_file: &Path, ext: Extension) -> eyre::Result<()> {
     let alpha_mul_div = fr::MulDiv::default();
-
-    alpha_mul_div.multiply_alpha_inplace(&mut src_img.view_mut())?;
 
     let resize_w = NonZeroU32::new(dim).ok_or_eyre("Non Zero Width")?;
     let resize_h = NonZeroU32::new(dim).ok_or_eyre("Non Zero Height")?;
@@ -27,21 +23,33 @@ pub fn resize(img: DynamicImage, dim: u32) -> eyre::Result<()> {
     let mut resizer = fr::Resizer::new(fr::ResizeAlg::Convolution(fr::FilterType::Lanczos3));
     resizer.resize(&src_img.view(), &mut dst_view)?;
 
-    alpha_mul_div.divide_alpha_inplace(&mut dst_view).unwrap();
+    alpha_mul_div.divide_alpha_inplace(&mut dst_view)?;
 
     let file = fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(Path::new("out.png"))?;
+        .open(out_file)?;
 
     let mut result_buf = BufWriter::new(file);
 
-    PngEncoder::new(&mut result_buf).write_image(
-        dst_image.buffer(),
-        resize_w.get(),
-        resize_h.get(),
-        ColorType::Rgba8,
-    )?;
+    match ext {
+        Extension::PNG => {
+            PngEncoder::new(&mut result_buf).write_image(
+                dst_image.buffer(),
+                resize_w.get(),
+                resize_h.get(),
+                ColorType::Rgba8,
+            )?;
+        }
+        Extension::ICO => {
+            IcoEncoder::new(&mut result_buf).write_image(
+                dst_image.buffer(),
+                resize_w.get(),
+                resize_h.get(),
+                ColorType::Rgba8,
+            )?;
+        }
+    }
 
     Ok(())
 }
